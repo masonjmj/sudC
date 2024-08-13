@@ -5,10 +5,12 @@
 #include <stdbool.h>
 #include <stdint.h>
 #include <stdlib.h>
+#include <time.h>
 
 #define ASCII_ZERO 48
 
 int main(int argc, char *argv[]) {
+  srand(time(NULL));
   struct Sudoku game;
   sud_game_init(&game);
 
@@ -16,55 +18,77 @@ int main(int argc, char *argv[]) {
 
   screen_fill_board(game.board);
 
-  int8_t highlighted_col = -1;
-  int8_t highlighted_row = -1;
+  struct SudokuCell highlighted_cell = {
+      .x = -1,
+      .y = -1,
+  };
 
   while (true) {
     char ch = getch();
 
+    // Quit
     if (ch == 'q') {
       break;
     }
 
+    // Select column
     if (isdigit(ch)) {
       uint8_t input = ch - ASCII_ZERO;
       if (input > 0) {
         input--; // User inputs 1-9 but internally 0-indexed
-        screen_swap_highlighted_row(input, highlighted_row);
-        highlighted_row = input;
+        screen_swap_highlighted_row(input, highlighted_cell.x);
+        highlighted_cell.x = input;
       }
-    } else if (isalpha(ch)) {
+    }
+    // Select row
+    else if (isalpha(ch)) {
       char input = tolower(ch);
       if (input >= 97 && input <= 105) {
         uint8_t offset_from_a = input - 97;
-        screen_swap_highlighted_col(offset_from_a, highlighted_col);
-        highlighted_col = offset_from_a;
+        screen_swap_highlighted_col(offset_from_a, highlighted_cell.y);
+        highlighted_cell.y = offset_from_a;
       }
     }
 
-    bool valid_cell = highlighted_col >= 0 && highlighted_row >= 0 &&
-                      game.board[highlighted_col][highlighted_row] == 0;
+    bool valid_cell_selected =
+        highlighted_cell.y >= 0 && highlighted_cell.x >= 0 &&
+        game.board[highlighted_cell.y][highlighted_cell.x] == 0;
 
-    if (valid_cell) {
-      screen_set_input_cursor(highlighted_col, highlighted_row);
+    if (valid_cell_selected) {
+      screen_set_input_cursor(highlighted_cell.y, highlighted_cell.x);
 
       bool valid_guess_or_should_exit = false;
       while (!valid_guess_or_should_exit) {
         char guess = getch();
-        if (guess == 'r') {
-          screen_clear_highlights(highlighted_col, highlighted_row);
-          highlighted_col = -1;
-          highlighted_row = -1;
-          valid_guess_or_should_exit = true;
-        } else if (isdigit(guess) && guess > '0') {
-          uint8_t num = guess - ASCII_ZERO;
-          game.board[highlighted_col][highlighted_row] = num;
-          screen_fill_board(game.board);
-          screen_enter_guess(guess, highlighted_col, highlighted_row, CORRECT);
 
-          screen_clear_highlights(highlighted_col, highlighted_row);
-          highlighted_col = -1;
-          highlighted_row = -1;
+        // Cancel guess entry
+        if (guess == 'r') {
+          screen_clear_highlights(highlighted_cell.y, highlighted_cell.x);
+          highlighted_cell.y = -1;
+          highlighted_cell.x = -1;
+          valid_guess_or_should_exit = true;
+        }
+        // Enter guess
+        else if (isdigit(guess) && guess > '0') {
+          uint8_t num = guess - ASCII_ZERO;
+          screen_fill_board(game.board);
+
+          bool legal_placement = sud_solvable_placement(&game, highlighted_cell, num);
+          if (legal_placement) {
+            game.board[highlighted_cell.y][highlighted_cell.x] = num;
+          }
+          struct SudokuCell first_cell = {.x = 0, .y = 0};
+          int solutions = unique_solutions(&game, first_cell, 0);
+          move(0, 0);
+          printw("%d", solutions);
+
+
+          screen_enter_guess(guess, highlighted_cell.y, highlighted_cell.x,
+                             legal_placement ? CORRECT : INCORRECT);
+
+          screen_clear_highlights(highlighted_cell.y, highlighted_cell.x);
+          highlighted_cell.y = -1;
+          highlighted_cell.x = -1;
           valid_guess_or_should_exit = true;
         }
       }
